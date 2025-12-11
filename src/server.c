@@ -14,7 +14,8 @@
 #define WORKER_THREAD_COUNT 4
 #define CLIENT_QUEUE_CAPACITY 64
 
-typedef struct {
+typedef struct
+{
     int client_fds[CLIENT_QUEUE_CAPACITY];
     int head;
     int tail;
@@ -27,27 +28,33 @@ typedef struct {
 static client_queue_t g_client_queue;
 static pthread_t g_worker_threads[WORKER_THREAD_COUNT];
 
-static void client_queue_init(client_queue_t *q) {
+static void client_queue_init(client_queue_t *q)
+{
     q->head = 0;
     q->tail = 0;
     q->count = 0;
-    if (pthread_mutex_init(&q->mutex, NULL) != 0) {
+    if (pthread_mutex_init(&q->mutex, NULL) != 0)
+    {
         perror("pthread_mutex_init");
         exit(EXIT_FAILURE);
     }
-    if (pthread_cond_init(&q->not_empty, NULL) != 0) {
+    if (pthread_cond_init(&q->not_empty, NULL) != 0)
+    {
         perror("pthread_cond_init not_empty");
         exit(EXIT_FAILURE);
     }
-    if (pthread_cond_init(&q->not_full, NULL) != 0) {
+    if (pthread_cond_init(&q->not_full, NULL) != 0)
+    {
         perror("pthread_cond_init not_full");
         exit(EXIT_FAILURE);
     }
 }
 
-static void client_queue_push(client_queue_t *q, int client_fd) {
+static void client_queue_push(client_queue_t *q, int client_fd)
+{
     pthread_mutex_lock(&q->mutex);
-    while (q->count == CLIENT_QUEUE_CAPACITY) {
+    while (q->count == CLIENT_QUEUE_CAPACITY)
+    {
         pthread_cond_wait(&q->not_full, &q->mutex);
     }
     q->client_fds[q->tail] = client_fd;
@@ -57,9 +64,11 @@ static void client_queue_push(client_queue_t *q, int client_fd) {
     pthread_mutex_unlock(&q->mutex);
 }
 
-static int client_queue_pop(client_queue_t *q) {
+static int client_queue_pop(client_queue_t *q)
+{
     pthread_mutex_lock(&q->mutex);
-    while (q->count == 0) {
+    while (q->count == 0)
+    {
         pthread_cond_wait(&q->not_empty, &q->mutex);
     }
     int client_fd = q->client_fds[q->head];
@@ -70,9 +79,11 @@ static int client_queue_pop(client_queue_t *q) {
     return client_fd;
 }
 
-static void *worker_thread_main(void *arg) {
+static void *worker_thread_main(void *arg)
+{
     (void)arg;
-    while (1) {
+    while (1)
+    {
         int client_fd = client_queue_pop(&g_client_queue);
         handle_client(client_fd);
         close(client_fd);
@@ -80,10 +91,13 @@ static void *worker_thread_main(void *arg) {
     return NULL;
 }
 
-void init_thread_pool(void) {
+void init_thread_pool(void)
+{
     client_queue_init(&g_client_queue);
-    for (int i = 0; i < WORKER_THREAD_COUNT; ++i) {
-        if (pthread_create(&g_worker_threads[i], NULL, worker_thread_main, NULL) != 0) {
+    for (int i = 0; i < WORKER_THREAD_COUNT; ++i)
+    {
+        if (pthread_create(&g_worker_threads[i], NULL, worker_thread_main, NULL) != 0)
+        {
             perror("pthread_create");
             exit(EXIT_FAILURE);
         }
@@ -91,7 +105,8 @@ void init_thread_pool(void) {
     printf("Thread pool initialized with %d workers\n", WORKER_THREAD_COUNT);
 }
 
-void enqueue_client(int client_fd) {
+void enqueue_client(int client_fd)
+{
     client_queue_push(&g_client_queue, client_fd);
 }
 
