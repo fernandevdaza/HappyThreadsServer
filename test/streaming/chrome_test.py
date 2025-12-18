@@ -20,9 +20,9 @@ class Result:
 
 JS_METRICS = r"""
 (() => {
-  const v = document.querySelector('\#v');
+  const v = document.querySelector('#v');
   if (!v) {
-    window.__metrics = { error: "No se encontró video \#v" };
+    window.__metrics = { error: "No se encontró video #v" };
     return;
   }
 
@@ -100,7 +100,7 @@ async def click_play_for_item(page, item_id: str) -> None:
             const el = document.querySelector(sel);
             if (el) el.scrollIntoView({behavior: 'instant', block: 'center', inline: 'center'});
         }""",
-        card_sel
+        card_sel,
     )
 
     await page.evaluate(
@@ -115,19 +115,23 @@ async def click_play_for_item(page, item_id: str) -> None:
               el.scrollIntoView({behavior: 'instant', block: 'nearest', inline: 'center'});
             }
         }""",
-        card_sel
+        card_sel,
     )
 
     await page.wait_for_selector(btn_sel, timeout=20_000)
-
     await page.hover(card_sel)
-
     await page.click(btn_sel, force=True)
 
 
-async def run_one(client_id: int, page_url: str, item_id: str, duration_s: int, headless: bool) -> Result:
+async def run_one(
+    client_id: int, page_url: str, item_id: str, duration_s: int, headless: bool
+) -> Result:
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=headless)
+        browser = await p.chromium.launch(
+            channel="chrome",
+            headless=headless,
+            args=["--autoplay-policy=no-user-gesture-required"],
+        )
         ctx = await browser.new_context()
         page = await ctx.new_page()
 
@@ -138,20 +142,46 @@ async def run_one(client_id: int, page_url: str, item_id: str, duration_s: int, 
         await page.wait_for_selector("#modal.is-open", timeout=15_000)
         await page.wait_for_selector("#v", timeout=15_000)
 
+        await page.eval_on_selector("#v", "v => { v.muted = true; v.volume = 0; }")
+
         await page.evaluate(JS_METRICS)
+
+        await page.wait_for_function(
+            "() => window.hls && window.hls.levels && window.hls.levels.length > 0",
+            timeout=20_000,
+        )
+
+        await page.eval_on_selector("#v", "v => v.play().catch(()=>{})")
 
         t_start = time.time()
         started = False
-        while time.time() - t_start < 20:
+        while time.time() - t_start < 25:
+            paused = await page.eval_on_selector("#v", "v => v.paused")
             ct = await page.eval_on_selector("#v", "v => v.currentTime")
-            if ct and ct > 0.2:
+            if (not paused) and ct and ct > 0.2:
                 started = True
                 break
             await asyncio.sleep(0.25)
 
         if not started:
+            await page.eval_on_selector("#v", "v => { v.muted = true; v.volume = 0; }")
             await page.click("#v", force=True)
             await page.eval_on_selector("#v", "v => v.play().catch(()=>{})")
+
+            t_retry = time.time()
+            while time.time() - t_retry < 10:
+                paused = await page.eval_on_selector("#v", "v => v.paused")
+                ct = await page.eval_on_selector("#v", "v => v.currentTime")
+                if (not paused) and ct and ct > 0.2:
+                    started = True
+                    break
+                await asyncio.sleep(0.25)
+
+        if not started:
+            await browser.close()
+            raise RuntimeError(
+                "No arrancó playback. Probable 404 de m3u8/segments o rutas relativas en el playlist."
+            )
 
         t0 = time.time()
         ended = False
@@ -204,7 +234,9 @@ async def main():
     for r in results:
         total_stalls += r.stalls
         total_stall_ms += r.stall_ms
-        drop_pct = (100.0 * r.dropped_frames / r.total_frames) if r.total_frames > 0 else 0.0
+        drop_pct = (
+            (100.0 * r.dropped_frames / r.total_frames) if r.total_frames > 0 else 0.0
+        )
         print(
             f"Cliente {r.client_id:02d} | stalls={r.stalls:3d} | stall_ms={r.stall_ms:8.1f} "
             f"| t={r.current_time:6.1f}s | buf_end={r.buffered_end:6.1f}s "

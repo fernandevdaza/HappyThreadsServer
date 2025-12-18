@@ -2,9 +2,10 @@
 #include "http.h"
 #include <unistd.h>
 #include <stdio.h>
-
+#include <signal.h>
 int main()
 {
+    signal(SIGPIPE, SIG_IGN);
     init_thread_pool();
     int server_fd = create_socket_and_listen(8000);
 
