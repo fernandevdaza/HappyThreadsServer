@@ -5,17 +5,14 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include "parser.h"
+#include "logger.h"
 
 static int send_all(int fd, const void *buf, size_t len)
 {
     const char *p = (const char *)buf;
-    while (len > 0)
-    {
-        ssize_t n = send(fd, p, len, 0);
-        if (n <= 0)
-        {
-            return -1;
-        }
+    while (len > 0) {
+        ssize_t n = send(fd, p, len, MSG_NOSIGNAL);
+        if (n <= 0) return -1;
         p += (size_t)n;
         len -= (size_t)n;
     }
@@ -204,7 +201,9 @@ void handle_client(int client_fd)
     char full_path[512];
     snprintf(full_path, sizeof(full_path), "%s%s", base_path, file_path);
 
-    printf("Abriendo archivo: %s\n", full_path);
+    if (!is_logging_enabled()) {
+        printf("Abriendo archivo: %s\n", full_path);
+    }
 
     file = fopen(full_path, read_mode);
 

@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include "http.h"
+#include "logger.h"
 
 #define WORKER_THREAD_COUNT 4
 #define CLIENT_QUEUE_CAPACITY 64
@@ -26,7 +27,9 @@ typedef struct
 } client_queue_t;
 
 static client_queue_t g_client_queue;
+static client_queue_t g_client_queue;
 static pthread_t g_worker_threads[WORKER_THREAD_COUNT];
+static int g_worker_ids[WORKER_THREAD_COUNT];
 
 static void client_queue_init(client_queue_t *q)
 {
@@ -62,6 +65,7 @@ static void client_queue_push(client_queue_t *q, int client_fd)
     q->count++;
     pthread_cond_signal(&q->not_empty);
     pthread_mutex_unlock(&q->mutex);
+
 }
 
 static int client_queue_pop(client_queue_t *q)
@@ -81,11 +85,16 @@ static int client_queue_pop(client_queue_t *q)
 
 static void *worker_thread_main(void *arg)
 {
-    (void)arg;
+    int worker_id = *((int *)arg);
     while (1)
     {
+        log_event(worker_id, -1, "Blocked", "Waiting for client");
         int client_fd = client_queue_pop(&g_client_queue);
+        
+        log_event(worker_id, client_fd, "Running", "Handling request");
         handle_client(client_fd);
+        
+        log_event(worker_id, client_fd, "Done", "Finished request");
         close(client_fd);
     }
     return NULL;
@@ -96,13 +105,16 @@ void init_thread_pool(void)
     client_queue_init(&g_client_queue);
     for (int i = 0; i < WORKER_THREAD_COUNT; ++i)
     {
-        if (pthread_create(&g_worker_threads[i], NULL, worker_thread_main, NULL) != 0)
+        g_worker_ids[i] = i;
+        if (pthread_create(&g_worker_threads[i], NULL, worker_thread_main, &g_worker_ids[i]) != 0)
         {
             perror("pthread_create");
             exit(EXIT_FAILURE);
         }
     }
-    printf("Thread pool initialized with %d workers\n", WORKER_THREAD_COUNT);
+    if (!is_logging_enabled()) {
+        printf("Thread pool initialized with %d workers\n", WORKER_THREAD_COUNT);
+    }
 }
 
 void enqueue_client(int client_fd)
@@ -147,7 +159,9 @@ int create_socket_and_listen(int port)
         exit(EXIT_FAILURE);
     }
 
-    printf("Server listening on port %d\n", port);
+    if (!is_logging_enabled()) {
+        printf("Server listening on port %d\n", port);
+    }
     return server_fd;
 }
 
